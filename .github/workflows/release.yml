@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  discussions: write
+  packages: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-release:
+    name: Build and release
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Update Rust
+        run: rustup update
+
+      - name: Get info
+        id: get_info
+        run: |
+          NAME=$(grep '^name' Cargo.toml | sed 's/name = "//' | sed 's/"//')
+          VERSION=$(grep '^version' Cargo.toml | sed 's/version = "//' | sed 's/"//')
+          echo "NAME=${NAME}" >> $GITHUB_OUTPUT
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Rename binary
+        run: mv "target/release/${{ steps.get_info.outputs.NAME }}.exe" "target/release/${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}.exe"
+
+      - name: Check if this version was already released
+        uses: mukunku/tag-exists-action@v1.2.0
+        id: checkTag
+        with:
+          tag: 'v${{ steps.get_info.outputs.VERSION }}'
+
+      - name: Terminate if this version was already released
+        if: steps.checkTag.outputs.exists == 'true'
+        run: |
+          echo "v${{ steps.get_info.outputs.VERSION }} was already released!" >&2
+          exit 1
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          body: |
+              ### **_${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}_**
+          draft: false
+          prerelease: false
+          files: |
+            target/release/${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}.exe
+          name: v${{ steps.get_info.outputs.VERSION }}
+          tag_name: v${{ steps.get_info.outputs.VERSION }}
+          fail_on_unmatched_files: true
+          token: ${{ secrets.GITHUB_TOKEN }}
